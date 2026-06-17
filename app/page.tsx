@@ -367,17 +367,13 @@ export default function Home() {
             style={{ background: 'none', border: 'none', color: '#6b6b80', fontSize: 12, cursor: 'pointer' }}>
             ? Tour
           </button>
-          <span style={{ color: '#3d3d50', fontSize: 12 }}>Social post creator</span>
+          <span className="editor-header-hint" style={{ color: '#3d3d50', fontSize: 12 }}>Social post creator</span>
         </div>
       </header>
 
-      <div style={{
-        maxWidth: 1300, margin: '0 auto', padding: '24px 16px',
-        display: 'grid', gridTemplateColumns: '360px 1fr',
-        gap: 24, alignItems: 'start',
-      }}>
+      <div className="editor-grid">
         {/* ── Left: Controls ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="editor-controls" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* Format */}
           <Section title="Format">
@@ -491,7 +487,7 @@ export default function Home() {
         </div>
 
         {/* ── Right: Preview ── */}
-        <div style={{ position: 'sticky', top: 72 }}>
+        <div className="editor-preview">
           <div style={{ background: '#16161f', border: '1px solid #2a2a3a', borderRadius: 12, overflow: 'hidden' }}>
             <div style={{
               padding: '12px 16px', borderBottom: '1px solid #2a2a3a',

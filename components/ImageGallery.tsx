@@ -91,6 +91,7 @@ export default function ImageGallery({ onSelect, onClose }: Props) {
 
         {/* Grid */}
         <div
+          className="gallery-grid"
           style={{
             padding: 16,
             display: 'grid',

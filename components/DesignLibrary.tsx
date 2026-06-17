@@ -128,6 +128,7 @@ export default function DesignLibrary({ onSelect, onClose }: Props) {
 
         {/* Grid */}
         <div
+          className="design-grid"
           style={{
             padding: 20,
             display: 'grid',
