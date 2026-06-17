@@ -6,7 +6,7 @@ import type { LayerDef } from '@/lib/editor'
 interface Props {
   svgHtml: string
   layers: LayerDef[]
-  aspectRatio: number   // height / width  e.g. 1 for square
+  aspectRatio: number
   onLayerMove: (id: string, x: number, y: number) => void
 }
 
@@ -17,7 +17,8 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
   const [activeId, setActiveId] = useState<string | null>(null)
 
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
+    // ── Mouse ──
+    const onMouseMove = (e: MouseEvent) => {
       if (!dragging.current || !containerRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
       const dx = ((e.clientX - dragging.current.sx) / rect.width) * 100
@@ -27,23 +28,56 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
       onLayerMove(dragging.current.id, newX, newY)
     }
 
-    const onUp = () => {
+    const onMouseUp = () => {
       if (dragging.current) setActiveId(null)
       dragging.current = null
     }
 
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+    // ── Touch ──
+    const onTouchMove = (e: TouchEvent) => {
+      if (!dragging.current || !containerRef.current) return
+      e.preventDefault()
+      const t = e.touches[0]
+      const rect = containerRef.current.getBoundingClientRect()
+      const dx = ((t.clientX - dragging.current.sx) / rect.width) * 100
+      const dy = ((t.clientY - dragging.current.sy) / rect.height) * 100
+      const newX = Math.max(0, Math.min(95, dragging.current.ox + dx))
+      const newY = Math.max(0, Math.min(95, dragging.current.oy + dy))
+      onLayerMove(dragging.current.id, newX, newY)
+    }
+
+    const onTouchEnd = () => {
+      if (dragging.current) setActiveId(null)
+      dragging.current = null
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+    document.addEventListener('touchmove', onTouchMove, { passive: false })
+    document.addEventListener('touchend', onTouchEnd)
+
     return () => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.removeEventListener('touchmove', onTouchMove)
+      document.removeEventListener('touchend', onTouchEnd)
     }
   }, [onLayerMove])
 
+  const startDrag = (ld: LayerDef, clientX: number, clientY: number) => {
+    setActiveId(ld.id)
+    dragging.current = { id: ld.id, sx: clientX, sy: clientY, ox: ld.x, oy: ld.y }
+  }
+
   const onMouseDown = (ld: LayerDef, e: React.MouseEvent) => {
     e.preventDefault()
-    setActiveId(ld.id)
-    dragging.current = { id: ld.id, sx: e.clientX, sy: e.clientY, ox: ld.x, oy: ld.y }
+    startDrag(ld, e.clientX, e.clientY)
+  }
+
+  const onTouchStart = (ld: LayerDef, e: React.TouchEvent) => {
+    e.preventDefault()
+    const t = e.touches[0]
+    startDrag(ld, t.clientX, t.clientY)
   }
 
   return (
@@ -57,9 +91,10 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
         overflow: 'hidden',
         background: '#0d0d14',
         userSelect: 'none',
+        touchAction: 'none',
       }}
     >
-      {/* SVG render — no pointer events so drag layer stays on top */}
+      {/* SVG render */}
       <div
         className="absolute inset-0 [&>svg]:w-full [&>svg]:h-full"
         style={{ pointerEvents: 'none' }}
@@ -79,6 +114,7 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
               onMouseDown={(e) => onMouseDown(ld, e)}
               onMouseEnter={() => setHoverId(ld.id)}
               onMouseLeave={() => setHoverId(null)}
+              onTouchStart={(e) => onTouchStart(ld, e)}
               style={{
                 position: 'absolute',
                 left: `${ld.x}%`,
@@ -91,7 +127,6 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
                 transition: 'border-color 0.15s',
               }}
             >
-              {/* Layer label chip */}
               {(isHover || isActive) && (
                 <span
                   style={{
@@ -112,7 +147,6 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
                 </span>
               )}
 
-              {/* Corner drag indicator */}
               <span
                 style={{
                   position: 'absolute',
@@ -132,7 +166,7 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
         })}
       </div>
 
-      {/* Drag hint (shows when nothing is hovered) */}
+      {/* Hint */}
       {!hoverId && !activeId && (
         <div
           style={{
@@ -149,7 +183,7 @@ export default function DraggableCanvas({ svgHtml, layers, aspectRatio, onLayerM
             whiteSpace: 'nowrap',
           }}
         >
-          Hover a text layer to drag it
+          Tap or hover a text layer to move it
         </div>
       )}
     </div>
