@@ -8,27 +8,49 @@ import type { Template, FormatId } from '@/lib/types'
 export const runtime = 'nodejs'
 
 let resvgInitialized = false
+let fontBytes: Uint8Array | null = null
+let fontLoaded = false
 
-// resvg-wasm can't call loadSystemFonts in WASM mode.
-// Pass font bytes directly via CustomFontsOptions instead.
-// Bundled Inter.ttf works on Vercel (no system fonts available there).
-const FONT_PATHS = [
-  path.join(process.cwd(), 'public/fonts/Inter.ttf'),
-  '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
-  '/Library/Fonts/Arial Unicode.ttf',
-]
+async function loadFont(): Promise<Uint8Array | null> {
+  if (fontLoaded) return fontBytes
 
-function loadFontBytes(): Uint8Array | null {
-  for (const p of FONT_PATHS) {
+  // 1. Try bundled font (works in dev; also on Vercel when outputFileTracingIncludes is set)
+  const localPaths = [
+    path.join(process.cwd(), 'public/fonts/Inter.ttf'),
+    '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+    '/Library/Fonts/Arial Unicode.ttf',
+  ]
+  for (const p of localPaths) {
     if (existsSync(p)) {
-      try { return new Uint8Array(readFileSync(p)) } catch {}
+      try {
+        fontBytes = new Uint8Array(readFileSync(p))
+        fontLoaded = true
+        console.log('[render] font loaded from fs:', p, fontBytes.length, 'bytes')
+        return fontBytes
+      } catch {}
     }
   }
+
+  // 2. Fallback: fetch the font from our own deployment's public URL
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
+  try {
+    const res = await fetch(`${baseUrl}/fonts/Inter.ttf`)
+    if (res.ok) {
+      fontBytes = new Uint8Array(await res.arrayBuffer())
+      fontLoaded = true
+      console.log('[render] font loaded via http, bytes:', fontBytes.length)
+      return fontBytes
+    }
+  } catch (e) {
+    console.error('[render] http font fetch failed:', e)
+  }
+
+  fontLoaded = true
+  console.error('[render] no font available — text will be invisible in PNG')
   return null
 }
-
-const FONT_BYTES = loadFontBytes()
-console.log('[render] font loaded:', FONT_BYTES ? `${FONT_BYTES.length} bytes` : 'NONE — text will be invisible')
 
 async function initResvg() {
   if (resvgInitialized) return
@@ -55,7 +77,6 @@ export async function GET(req: NextRequest) {
 
   let template: Template
   try {
-    // Client sends base64url without padding; Node Buffer handles that correctly
     const json = Buffer.from(encoded, 'base64url').toString('utf-8')
     template = JSON.parse(json)
   } catch {
@@ -70,18 +91,19 @@ export async function GET(req: NextRequest) {
 
   try {
     await initResvg()
+    const bytes = await loadFont()
     const { Resvg } = await import('@resvg/resvg-wasm')
-    const fontOpts = FONT_BYTES
+
+    const fontOpts = bytes
       ? {
-          fontBuffers: [FONT_BYTES],
-          // Map all generic families → the loaded font so resvg can find it
-          // regardless of what fontFamily the SVG specifies
+          fontBuffers: [bytes],
           sansSerifFamily: 'Inter',
           serifFamily: 'Inter',
           monospaceFamily: 'Inter',
           defaultFontFamily: 'Inter',
         }
       : { loadSystemFonts: true }
+
     const resvg = new Resvg(svg, {
       fitTo: { mode: 'width', value: W },
       font: fontOpts,
