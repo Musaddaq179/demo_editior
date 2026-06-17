@@ -11,10 +11,11 @@ let resvgInitialized = false
 
 // resvg-wasm can't call loadSystemFonts in WASM mode.
 // Pass font bytes directly via CustomFontsOptions instead.
+// Bundled Inter.ttf works on Vercel (no system fonts available there).
 const FONT_PATHS = [
+  path.join(process.cwd(), 'public/fonts/Inter.ttf'),
   '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
   '/Library/Fonts/Arial Unicode.ttf',
-  '/Library/Fonts/Swis721 BT Roman.ttf',
 ]
 
 function loadFontBytes(): Uint8Array | null {
@@ -75,10 +76,10 @@ export async function GET(req: NextRequest) {
           fontBuffers: [FONT_BYTES],
           // Map all generic families → the loaded font so resvg can find it
           // regardless of what fontFamily the SVG specifies
-          sansSerifFamily: 'Arial Unicode MS',
-          serifFamily: 'Arial Unicode MS',
-          monospaceFamily: 'Arial Unicode MS',
-          defaultFontFamily: 'Arial Unicode MS',
+          sansSerifFamily: 'Inter',
+          serifFamily: 'Inter',
+          monospaceFamily: 'Inter',
+          defaultFontFamily: 'Inter',
         }
       : { loadSystemFonts: true }
     const resvg = new Resvg(svg, {
