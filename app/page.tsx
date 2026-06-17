@@ -265,18 +265,80 @@ export default function Home() {
     setDownloading(true)
     setDownloaded(false)
     try {
-      const encoded = encodeTemplate(template)
-      const res = await fetch(`/api/render?template=${encoded}&format=${formatId}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `post-${formatId}.png`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const W = selectedFormat.width
+      const H = selectedFormat.height
+
+      // 1. Fetch Inter font from public/fonts and convert to base64
+      const fontRes = await fetch('/fonts/Inter.ttf')
+      const fontBuf = await fontRes.arrayBuffer()
+      const fontBytes = new Uint8Array(fontBuf)
+      let binary = ''
+      for (let i = 0; i < fontBytes.length; i += 8192) {
+        binary += String.fromCharCode.apply(null, Array.from(fontBytes.subarray(i, i + 8192)))
+      }
+      const fontB64 = btoa(binary)
+
+      // 2. Build @font-face rules for every font name used in layers
+      //    so whatever font the user picked, Inter renders it
+      const usedFonts = Array.from(new Set(layers.map((l) => l.fontFamily))).concat(['Inter', 'DM Sans', 'sans-serif'])
+      const fontFaces = usedFonts
+        .map((name) => `@font-face{font-family:'${name}';src:url('data:font/truetype;base64,${fontB64}')format('truetype');font-weight:100 900;}`)
+        .join('')
+
+      // 3. Inline background image if present (prevents canvas tainting)
+      let tmpl = { ...template, background: { ...template.background } }
+      if (tmpl.background.imageUrl) {
+        try {
+          const imgRes = await fetch(tmpl.background.imageUrl)
+          if (imgRes.ok) {
+            const imgBuf = await imgRes.arrayBuffer()
+            const imgBytes2 = new Uint8Array(imgBuf)
+            let imgBin = ''
+            for (let i = 0; i < imgBytes2.length; i += 8192) {
+              imgBin += String.fromCharCode.apply(null, Array.from(imgBytes2.subarray(i, i + 8192)))
+            }
+            const mime = imgRes.headers.get('content-type') ?? 'image/jpeg'
+            tmpl = { ...tmpl, background: { ...tmpl.background, imageUrl: `data:${mime};base64,${btoa(imgBin)}` } }
+          }
+        } catch {
+          tmpl = { ...tmpl, background: { ...tmpl.background, imageUrl: undefined } }
+        }
+      }
+
+      // 4. Generate SVG and inject embedded font styles
+      let svg = layoutEngine(tmpl, W, H, 'download')
+      svg = svg.replace('<defs>', `<defs>\n<style>${fontFaces}</style>`)
+
+      // 5. SVG Blob → Image → Canvas → PNG download
+      const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+      const svgUrl = URL.createObjectURL(svgBlob)
+
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = W
+          canvas.height = H
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, W, H)
+          URL.revokeObjectURL(svgUrl)
+          canvas.toBlob((pngBlob) => {
+            if (!pngBlob) { reject(new Error('PNG export failed')); return }
+            const pngUrl = URL.createObjectURL(pngBlob)
+            const a = document.createElement('a')
+            a.href = pngUrl
+            a.download = `post-${formatId}.png`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            setTimeout(() => URL.revokeObjectURL(pngUrl), 1000)
+            resolve()
+          }, 'image/png')
+        }
+        img.onerror = () => reject(new Error('SVG load failed'))
+        img.src = svgUrl
+      })
+
       setDownloaded(true)
       setTimeout(() => setDownloaded(false), 2000)
     } catch (err) {
@@ -376,6 +438,7 @@ export default function Home() {
                 <span style={{ color: '#4f6ef7', fontSize: 11, fontFamily: 'monospace' }}>{bgAngle}°</span>
               </div>
               <input type="range" min={0} max={360} value={bgAngle}
+                title="Gradient angle"
                 onChange={(e) => setBgAngle(Number(e.target.value))}
                 style={{ width: '100%', accentColor: '#4f6ef7' }} />
             </div>
